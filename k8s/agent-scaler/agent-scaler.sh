@@ -1,4 +1,5 @@
 #!/bin/bash
+set -eEuo pipefail
 
 batch_size=${BATCH_SIZE:-1}
 max_jobs=${MAX_JOBS:-10}
