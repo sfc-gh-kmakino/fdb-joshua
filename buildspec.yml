@@ -1,0 +1,48 @@
+version: 0.2
+
+phases:
+  install:
+    commands:
+      - echo "install phase"
+      - 'ACCOUNT_ID=$(echo $CODEBUILD_BUILD_ARN | cut -d : -f 5)'
+      - REGISTRY=${ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
+      - aws ecr get-login-password | docker login --username AWS --password-stdin ${REGISTRY}
+      - docker pull ${REGISTRY}/centos:7
+      - docker tag ${REGISTRY}/centos:7 centos:7
+  pre_build:
+    commands:
+      - echo "pre_build phase"
+      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - DATE_STR=$(date +"%Y%m%d%H%M%S")
+  build:
+    commands:
+      - echo "build phase"
+      - ################################################################################
+      - # joshua-agent
+      - ################################################################################
+      - docker pull ${REGISTRY}/foundationdb/joshua-agent:latest || true
+      - docker build --cache-from ${REGISTRY}/foundationdb/joshua-agent:latest
+        --build-arg REPOSITORY=${REGISTRY}/foundationdb/build
+        --tag ${REGISTRY}/foundationdb/joshua-agent:${DATE_STR}-${COMMIT_HASH}
+        --tag ${REGISTRY}/foundationdb/joshua-agent:latest
+        .
+      - ################################################################################
+      - # agent-scaler
+      - ################################################################################
+      - cd ${CODEBUILD_SRC_DIR}/k8s/agent-scaler
+      - cp ../../joshua/joshua_model.py .
+      - docker pull ${REGISTRY}/foundationdb/agent-scaler:latest || true
+      - docker build --cache-from ${REGISTRY}/foundationdb/agent-scaler:latest
+        --build-arg AGENT_TAG=${REGISTRY}/foundationdb/joshua-agent:latest
+        --tag ${REGISTRY}/foundationdb/agent-scaler:${DATE_STR}-${COMMIT_HASH}
+        --tag ${REGISTRY}/foundationdb/agent-scaler:latest
+        .
+  post_build:
+    commands:
+      - echo "post_build phase"
+      - # PUSH joshua-agent TO ECR
+      - docker push ${REGISTRY}/foundationdb/joshua-agent:${DATE_STR}-${COMMIT_HASH}
+      - docker push ${REGISTRY}/foundationdb/joshua-agent:latest
+      - # PUSH agent-scaler TO ECR
+      - docker push ${REGISTRY}/foundationdb/agent-scaler:${DATE_STR}-${COMMIT_HASH}
+      - docker push ${REGISTRY}/foundationdb/agent-scaler:latest
